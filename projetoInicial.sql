@@ -1,32 +1,41 @@
 CREATE DATABASE projetoInicial;
 
 /*Criando tabela de Aluno*/
-CREATE TABLE aluno (
+CREATE TABLE if not exists academico.aluno (
     id SERIAL PRIMARY KEY, /*Identificador único*/
-	primeiro_nome VARCHAR(255) NOT NULL,
+	primeiro_nome VARCHAR(255) NOT NULL CHECK (primeiro_nome <> ''),
 	ultimo_nome VARCHAR(255) NOT NULL,
-	data_nascimento DATE NOT NULL
+	data_nascimento DATE NOT NULL DEFAULT NOW():: DATE
 );
 
 /*Criando tabela de categoria*/
-CREATE TABLE categoria (
+CREATE TABLE academico.categoria (
     id SERIAL PRIMARY KEY,
 	nome VARCHAR(255) NOT NULL UNIQUE
 );
 
 /*Criando tabela de curso*/
-CREATE TABLE curso (
+CREATE TABLE academico.curso (
     id SERIAL PRIMARY KEY,
 	nome VARCHAR(255) NOT NULL,
-	categoria_id INTEGER NOT NULL REFERENCES categoria(id)
+	categoria_id INTEGER NOT NULL REFERENCES academico.categoria(id)
 );
 
 /*Criando tabela de aluno_curso*/
-CREATE TABLE aluno_curso (
-	aluno_id INTEGER NOT NULL REFERENCES aluno(id),
-	curso_id INTEGER NOT NULL REFERENCES curso(id),
+CREATE TABLE academico.aluno_curso (
+	aluno_id INTEGER NOT NULL REFERENCES academico.aluno(id),
+	curso_id INTEGER NOT NULL REFERENCES academico.curso(id),
 	PRIMARY KEY (aluno_id, curso_id)
 );
+
+create schema academico;
+
+drop table aluno;
+drop table aluno_curso;
+drop table categoria cascade;
+drop view vw_cursos_por_categoria;
+drop table curso cascade;
+
 
 /*Inserindo valores a tabela de aluno*/
 INSERT into aluno(primeiro_nome, ultimo_nome,data_nascimento) 
@@ -141,7 +150,38 @@ select concat('Vinicius', ' ', 'Dias');
 
 /*UPPER (caixa alta) / TRIM (excluir os espacos do meio e fim)*/
 select UPPER(concat('Vinicius', ' ', 'Dias'));
-select TRIM upper(concat('Vinicius', ' ', 'Dias')) || ' ');
+select TRIM(upper(concat('Vinicius', ' ', 'Dias')) || ' ');
+
+
+/*Select extraindo o idade dos alunos*/
+select (primeiro_nome || ' ' || ultimo_nome) as nome_completo, 
+	EXTRACT (YEAR FROM AGE(data_nascimento)) AS idade 
+from aluno;
+
+/*Conversão para string*/
+select TO_CHAR(NOW(), 'DD/MM/YYYY');
+select TO_CHAR(NOW(), 'DD, MOUNT, YYYY');
+
+/*Criando View*/
+
+select categoria.id AS categoria_id, vw_cursos_por_categoria.*
+		from vw_cursos_por_categoria
+		JOIN categoria ON categoria.nome = vw_cursos_por_categoria.categoria;
+
+create view vw_cursos_por_categoria AS
+	select categoria.nome AS categoria,
+						Count(curso.id) AS numero_cursos
+					FROM categoria
+					JOIN curso ON curso.categoria_id = categoria.id
+			GROUP BY categoria;
+
+create view vw_cursos_programacao as select nome from curso where categoria_id = 2;
+
+select * from vw_cursos_programacao where nome = 'PHP';
+
+
+
+
 
 
 
