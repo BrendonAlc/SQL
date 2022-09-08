@@ -180,6 +180,222 @@ create view vw_cursos_programacao as select nome from curso where categoria_id =
 select * from vw_cursos_programacao where nome = 'PHP';
 
 
+--Função para tables de curso e categoria do curso
+
+create function cria_curso(nome_curso VARCHAR, nome_categoria VARCHAR) returns void AS $$
+	DECLARE
+		id_categoria INTEGER;
+	BEGIN
+		select id INTO id_categoria from categoria where nome = nome_categoria;
+		
+		IF NOT FOUND THEN
+			insert into categoria (nome) values (nome_categoria) returning id into id_categoria;
+		END IF;
+		
+		INSERT INTO curso (nome,categoria_id) VALUES (nome_curso, id_categoria);
+	END;
+$$ language plpgsql;
+
+select cria_curso('Java','Programação');
+select * from curso;
+select * from categoria;
+
+
+/*Criando tabela de instrutores*/
+create table instrutor (
+	id SERIAL PRIMARY KEY,
+	nome VARCHAR(255) NOT NULL,
+	salario DECIMAL (10, 2)
+);
+
+/*Inserindo dados de instrutores*/
+insert into instrutor (nome,salario) values ('Vinicius Dias',100);
+insert into instrutor (nome,salario) values ('Diogo Mascarenhas',200);
+insert into instrutor (nome,salario) values ('Nico Steppat',300);
+insert into instrutor (nome,salario) values ('Juliana',400);
+insert into instrutor (nome,salario) values ('Priscila',500);
+
+/*Criando função em programação SQL para dobrar o salario do instrutor*/
+CREATE FUNCTION dobro_do_salario(instrutor) RETURNS DECIMAL AS $$ 
+	SELECT $1.salario * 2 AS dobro;
+$$ LANGUAGE SQL;
+
+select nome, dobro_do_salario(instrutor.*) AS desejo FROM instrutor;
+
+CREATE OR REPLACE FUNCTION cria_instrutor_falso() RETURNS instrutor AS $$
+	SELECT 22, 'Nome falso', 200::DECIMAL;
+$$ LANGUAGE SQL;
+
+SELECT id, salario FROM cria_instrutor_falso();
+select * from instrutor;
+
+/*Criando função para conjunto de instrutores bem pagos*/
+CREATE FUNCTION instrutores_bem_pagos(valor_salario DECIMAL) RETURNS SETOF instrutor AS $$
+	SELECT * FROM instrutor where salario > valor_salario;
+$$ LANGUAGE SQL;
+
+select * from instrutores_bem_pagos(300);
+
+
+/*Programando em PLpgSQL Função para verificação de aumento ou não para o instrutor*/
+
+drop function salario_ok;
+create function salario_ok(id_instrutor INTEGER) returns VARCHAR as $$
+	DECLARE
+		instrutor instrutor;
+	BEGIN
+		select * from instrutor where id = id_instrutor into instrutor;
+		
+		-- se o salário do instrutor for maior do que 300, está ok.Se for 300 reais, então pode aumentar. Caso contrário, o salário está defasado.
+		/*IF instrutor.salario > 300 THEN
+			return 'Salário está ok!';
+		ELSEIF instrutor.salario = 300 THEN
+			return 'Salário pode aumentar.';
+		ELSE
+			return 'Salário está defasado.';
+		END IF;*/
+		CASE instrutor.salario
+			WHEN 100 THEN
+				return 'Salário muito baixo';
+			WHEN 200 THEN
+				return 'Salário baixo';
+			WHEN 300 THEN
+				return 'Salário ok';
+			ELSE
+				return 'Salário ótimo';
+		END CASE;
+	END;
+$$ language plpgsql;
+
+/*Seleção de nome e salário do instrutor*/
+select nome,salario_ok(instrutor.id) from instrutor;
+
+
+/*Programando em PLpgSQL com função de tabuada com LOOP/WHILE/FOR*/
+
+drop function tabuada;
+create or replace function tabuada(numero INTEGER) returns setof VARCHAR as $$
+	DECLARE
+		multiplicador INTEGER DEFAULT 1;
+	BEGIN
+		--Multiplicador que começa com 1, e vai até < 10
+		--numero * multiplicador
+		--multiplicador := multiplicador + 1		
+		LOOP
+			-- 9 x 1 = 9
+			RETURN NEXT numero || ' x ' || multiplicador || ' = ' || numero * multiplicador;
+			multiplicador := multiplicador + 1;	
+			EXIT WHEN multiplicador = 10;
+		END LOOP;
+	END;
+$$ language plpgsql;
+
+select tabuada(9);
+
+/*Laco de repeticao WHILE*/
+create or replace function tabuada(numero INTEGER) returns setof VARCHAR as $$
+	DECLARE
+		multiplicador INTEGER DEFAULT 1;
+	BEGIN	
+		WHILE multiplicador < 10 LOOP
+			RETURN NEXT numero || ' x ' || multiplicador || ' = ' || numero * multiplicador;
+			multiplicador := multiplicador + 1;	
+		END LOOP;
+	END;
+$$ language plpgsql;
+
+
+select tabuada(6);
+
+drop function tabuada;
+
+/*Laco de repeticao FOR*/
+create or replace function tabuada(numero INTEGER) returns setof VARCHAR as $$
+	declare
+		multiplicador INTEGER default 1;
+	begin
+		FOR multiplicador IN 1..9 LOOP
+			RETURN NEXT numero || ' x ' || multiplicador || ' = ' || numero * multiplicador;
+		END LOOP;
+	end;
+$$language plpgsql;
+
+
+drop function instrutor_com_salario;
+create function instrutor_com_salario(out nome VARCHAR, out salario_ok VARCHAR) returns setof record AS $$
+	declare
+		instrutor instrutor;
+	begin
+		for instrutor in select * from instrutor loop
+			nome := instrutor.nome;
+			salario_ok = salario_ok(instrutor.id);
+			
+			return next;
+		end loop;
+	end;
+$$language plpgsql;
+
+select * from instrutor_com_salario();
+
+/**
+	*Inserir instrutores (com salários).
+	*Se o salário for maior do que a média, salvar um log.
+	*Salvar outro log dizendo que fulano recebe mais do que X% da grade de instrutores
+*/
+
+drop table log_instrutores;
+drop function cria_instrutor;
+
+CREATE TABLE log_instrutores (
+	id SERIAL PRIMARY KEY,
+	informacao VARCHAR(255),
+	momento_criacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE OR REPLACE FUNCTION cria_instrutor () RETURNS TRIGGER AS $$
+	DECLARE
+		media_salarial DECIMAL;
+		instrutores_recebem_menos INTEGER DEFAULT 0;
+		total_instrutores INTEGER DEFAULT 0;
+		salario DECIMAL;
+		percentual DECIMAL;
+	BEGIN
+		SELECT AVG(instrutor.salario) INTO media_salarial FROM instrutor WHERE id <> NEW.id;
+		
+		IF NEW.salario salario_instrutor > media_salarial THEN
+			INSERT INTO log_instrutores (informacao) VALUES (NEW.nome || ' recebe acima da média');
+		END IF;
+		
+		FOR salario IN SELECT instrutor.salario FROM instrutor WHERE id <> NEW.id LOOP
+			total_instrutores := total_instrutores + 1;
+			
+			IF NEW.salario > salario THEN
+				instrutores_recebem_menos := instrutores_recebem_menos + 1;
+			END IF;
+		END LOOP;
+		
+		percentual = instrutores_recebem_menos::DECIMAL / total_instrutores::DECIMAL * 100;
+		
+		INSERT INTO log_instrutores(informacao)
+			VALUES(NEW.nome || ' recebe mais do que ' || percentual || '% da grade de instrutores.');
+	END;
+$$ LANGUAGE plpgsql;
+
+/*Para terminar a funcao criar_instrutor*/
+INSERT INTO instrutor (nome, salario) VALUES (nome_instrutor, salario_instrutor) RETURNING id INTO id_instrutor_inserido;
+
+
+select * from instrutor;
+select cria_instrutor('Luciana Vieira', 1000);
+select cria_instrutor('Brendon Rodrigo',700);
+select cria_instrutor('João',2000);
+select cria_instrutor('Cleusa',5000);
+select cria_instrutor('Juninho',1500);
+select * from log_instrutores;
+
+delete from instrutor where id = 9
+
+
 
 
 
